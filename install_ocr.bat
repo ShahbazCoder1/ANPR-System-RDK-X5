@@ -3,8 +3,8 @@ echo ===================================================
 echo Installing PaddleOCR for ANPR Pipeline
 echo ===================================================
 
-echo Installing PaddlePaddle and PaddleOCR...
-pip install paddlepaddle paddleocr opencv-python pyyaml pandas
+echo Installing PaddlePaddle and PaddleOCR (v2.9.1 for Windows compatibility)...
+pip install paddlepaddle "paddleocr==2.9.1" opencv-python pyyaml pandas
 
 echo.
 echo ===================================================

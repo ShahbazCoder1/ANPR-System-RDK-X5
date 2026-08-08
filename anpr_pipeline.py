@@ -161,8 +161,8 @@ def run_anpr_pipeline():
     print(f"YOLO Model     : {weights_path}")
     model = YOLO(str(weights_path))
 
-    print("Initializing PaddleOCR Engine...")
-    ocr = PaddleOCR(lang='en', show_log=False)
+    print(f"Initializing PaddleOCR Engine (use_gpu={use_gpu})...")
+    ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=use_gpu)
 
     # Output dirs
     results_dir = base_dir / "runs" / "anpr_results"
@@ -235,7 +235,7 @@ def run_anpr_pipeline():
                 best_raw_text = ""
 
                 for crop_ver in crop_versions:
-                    ocr_res = ocr.ocr(crop_ver)
+                    ocr_res = ocr.ocr(crop_ver, cls=True)
 
                     if ocr_res and ocr_res[0]:
                         texts = []

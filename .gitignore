@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch & YOLO Weights
+*.pt
+*.onnx
+*.engine
+*.bin
+runs/
+
+# Dataset cache & videos
+*.cache
+test vidoe/
+*.mp4
+*.avi
+*.mov
+
+# Environment & IDE
+.venv/
+venv/
+.vscode/
+.idea/

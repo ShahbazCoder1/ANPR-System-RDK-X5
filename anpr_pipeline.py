@@ -49,7 +49,7 @@ def fix_state_code(char0: str, char1: str) -> tuple[str, str] | None:
     # Known state code OCR confusion table
     known_fixes = {
         "MJ": ("M", "H"), "MB": ("M", "H"), "ME": ("M", "H"), "M0": ("M", "H0"), "M8": ("M", "H8"), "M7": ("M", "H7"),
-        "W8": ("W", "B8"), "VB": ("W", "B"), "V8": ("W", "B8"), "WE": ("W", "B"), "W0": ("W", "B0"), "IB": ("W", "B"), "1B": ("W", "B"), "UB": ("W", "B"),
+        "W8": ("W", "B"), "VB": ("W", "B"), "V8": ("W", "B"), "WE": ("W", "B"), "W0": ("W", "B0"), "IB": ("W", "B"), "1B": ("W", "B"), "UB": ("W", "B"),
         "D1": ("D", "L"), "D0": ("D", "L"), "OL": ("D", "L"),
         "K4": ("K", "A"), "K8": ("K", "A"), "KB": ("K", "A"),
         "Y0": ("U", "P"), "YP": ("U", "P"), "YE": ("U", "P"),
@@ -130,6 +130,11 @@ def preprocess_plate_crop(crop_img: np.ndarray) -> list[np.ndarray]:
     enhanced = clahe.apply(gray_upscaled)
     enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
     results.append(enhanced_bgr)
+
+    # Version 3: Sharpened (for blurry images)
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    sharpened = cv2.filter2D(upscaled, -1, kernel)
+    results.append(sharpened)
 
     return results
 

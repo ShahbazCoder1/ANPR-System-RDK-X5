@@ -48,18 +48,18 @@ def fix_state_code(char0: str, char1: str) -> tuple[str, str] | None:
 
     # Known state code OCR confusion table
     known_fixes = {
-        "MJ": "MH", "MB": "MH", "ME": "MH", "M0": "MH", "M8": "MH", "M7": "MH",
-        "W8": "WB", "VB": "WB", "V8": "WB", "WE": "WB", "W0": "WB", "IB": "WB", "1B": "WB", "UB": "WB",
-        "D1": "DL", "D0": "DL", "OL": "DL",
-        "K4": "KA", "K8": "KA", "KB": "KA",
-        "Y0": "UP", "YP": "UP", "YE": "UP",
-        "T5": "TS", "7N": "TN", "7S": "TS",
-        "H8": "HR", "HB": "HR",
-        "G1": "GJ", "0D": "OD",
+        "MJ": ("M", "H"), "MB": ("M", "H"), "ME": ("M", "H"), "M0": ("M", "H0"), "M8": ("M", "H8"), "M7": ("M", "H7"),
+        "W8": ("W", "B8"), "VB": ("W", "B"), "V8": ("W", "B8"), "WE": ("W", "B"), "W0": ("W", "B0"), "IB": ("W", "B"), "1B": ("W", "B"), "UB": ("W", "B"),
+        "D1": ("D", "L"), "D0": ("D", "L"), "OL": ("D", "L"),
+        "K4": ("K", "A"), "K8": ("K", "A"), "KB": ("K", "A"),
+        "Y0": ("U", "P"), "YP": ("U", "P"), "YE": ("U", "P"),
+        "T5": ("T", "S"), "7N": ("T", "N"), "7S": ("T", "S"),
+        "H8": ("H", "R"), "HB": ("H", "R"),
+        "G1": ("G", "J"), "0D": ("O", "D"),
     }
     if code in known_fixes:
-        fixed = known_fixes[code]
-        return fixed[0], fixed[1]
+        fixed_tuple = known_fixes[code]
+        return fixed_tuple[0], fixed_tuple[1]
 
     return None
 
@@ -108,6 +108,10 @@ def preprocess_plate_crop(crop_img: np.ndarray) -> list[np.ndarray]:
     """Return multiple upscaled/enhanced versions of the plate crop for PaddleOCR."""
     if crop_img is None or crop_img.size == 0:
         return [crop_img]
+
+    # Add padding around the plate to give OCR algorithms some border margin
+    padding = max(10, int(crop_img.shape[0] * 0.15))
+    crop_img = cv2.copyMakeBorder(crop_img, padding, padding, padding, padding, cv2.BORDER_REPLICATE)
 
     results = []
     h, w = crop_img.shape[:2]

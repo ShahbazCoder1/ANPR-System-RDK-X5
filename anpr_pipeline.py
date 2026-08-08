@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+import difflib
 from datetime import datetime
 from pathlib import Path
 import cv2
@@ -162,7 +163,7 @@ def run_anpr_pipeline():
     model = YOLO(str(weights_path))
 
     print(f"Initializing PaddleOCR Engine (use_gpu={use_gpu})...")
-    ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=use_gpu)
+    ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=use_gpu, enable_mkldnn=False)
 
     # Output dirs
     results_dir = base_dir / "runs" / "anpr_results"
@@ -269,10 +270,22 @@ def run_anpr_pipeline():
                     detection_count += 1
 
                 if best_plate:
-                    curr_time = time.time()
-                    last_seen = seen_plates.get(best_plate, 0)
+                    # Use video playback time instead of real-world processing time
+                    curr_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+                    
+                    # Check for similar plates recently seen
+                    is_duplicate = False
+                    for seen_plate, last_seen_time in list(seen_plates.items()):
+                        if (curr_time - last_seen_time) <= args.cooldown:
+                            # If plates are very similar (e.g. WB07J5252 vs WB07Q5252)
+                            similarity = difflib.SequenceMatcher(None, best_plate, seen_plate).ratio()
+                            if similarity > 0.7:
+                                is_duplicate = True
+                                # Update the cooldown for the original plate
+                                seen_plates[seen_plate] = curr_time
+                                break
 
-                    if (curr_time - last_seen) > args.cooldown:
+                    if not is_duplicate:
                         seen_plates[best_plate] = curr_time
                         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 

@@ -12,47 +12,64 @@ import numpy as np
 # Suppress PyTorch / Ultralytics verbose logs where possible
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+# Valid 2-letter State & UT Codes in India (including BH for Bharat Series)
+VALID_INDIAN_STATES = {
+    "AN", "AP", "AR", "AS", "BR", "CG", "CH", "DD", "DL", "DN",
+    "GA", "GJ", "HR", "HP", "JH", "JK", "KA", "KL", "LA", "LD",
+    "MH", "ML", "MN", "MP", "MZ", "NL", "OD", "PB", "PY", "RJ",
+    "SK", "TN", "TR", "TS", "UK", "UP", "WB", "BH"
+}
+
 # Indian License Plate RegEx: State(2) + District(1-2) + Series(1-3) + Number(4)
-# Examples: MH12AB1234, KA01C5678, DL3CAB1234, HR26DQ5555
 INDIAN_PLATE_REGEX = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$")
 
 def clean_and_validate_indian_plate(raw_text: str) -> str | None:
-    """Clean raw OCR text and validate against Indian plate RegEx format."""
+    """Clean raw OCR text, auto-correct character confusions, and strictly validate Indian State Code + Format."""
     if not raw_text:
         return None
     
     # Uppercase and strip whitespace / non-alphanumeric characters
     cleaned = re.sub(r"[^A-Z0-9]", "", raw_text.upper())
 
-    # Basic length check: Indian plates are between 8 and 11 characters
+    # Length check: Indian plates are between 8 and 11 characters
     if not (8 <= len(cleaned) <= 11):
         return None
 
-    # Check if cleaned text matches Indian plate format
-    if INDIAN_PLATE_REGEX.match(cleaned):
-        return cleaned
-
-    # Common OCR character confusion fixes based on position heuristics
-    # E.g., Replace 'O' with '0' in district/number parts, '0' with 'O' in state part
+    # Common character confusion mapping based on positional rules
     fixed = list(cleaned)
-    
-    # State code (First 2 chars MUST be letters)
+
+    # 1. First 2 characters MUST be a valid State Code (Letters only)
     for i in range(2):
         if fixed[i] == '0': fixed[i] = 'O'
         elif fixed[i] == '1': fixed[i] = 'I'
         elif fixed[i] == '8': fixed[i] = 'B'
         elif fixed[i] == '5': fixed[i] = 'S'
+        elif fixed[i] == '4': fixed[i] = 'A'
 
-    # District code (Next 1-2 chars MUST be numbers)
-    for i in range(2, 4):
-        if i < len(fixed) and fixed[i].isdigit() is False:
-            if fixed[i] == 'O': fixed[i] = '0'
-            elif fixed[i] == 'I': fixed[i] = '1'
-            elif fixed[i] == 'Z': fixed[i] = '2'
-            elif fixed[i] == 'S': fixed[i] = '5'
-            elif fixed[i] == 'B': fixed[i] = '8'
+    state_code = "".join(fixed[:2])
+    if state_code not in VALID_INDIAN_STATES:
+        # Try minor fixes for state code (e.g., M0 -> MH, K4 -> KA, D1 -> DL, M8 -> MH)
+        state_fixes = {"M0": "MH", "M8": "MH", "MJ": "MH", "MB": "MH", "ME": "MH",
+                       "D1": "DL", "D0": "DL", "K4": "KA", "K8": "KA", "KB": "KA",
+                       "W8": "WB", "Y0": "UP", "YE": "UP"}
+        if state_code in state_fixes:
+            fixed[0], fixed[1] = state_fixes[state_code][0], state_fixes[state_code][1]
+        else:
+            return None  # Invalid state code -> Reject false detection
 
-    # Last 4 chars MUST be numbers
+    # 2. District code (Next 1-2 chars MUST be digits)
+    # Check digits for index 2 and 3
+    if len(fixed) >= 4:
+        for i in (2, 3):
+            if i < len(fixed) - 4:  # Do not touch the last 4 digits
+                if fixed[i].isdigit() is False:
+                    if fixed[i] == 'O': fixed[i] = '0'
+                    elif fixed[i] == 'I': fixed[i] = '1'
+                    elif fixed[i] == 'Z': fixed[i] = '2'
+                    elif fixed[i] == 'S': fixed[i] = '5'
+                    elif fixed[i] == 'B': fixed[i] = '8'
+
+    # 3. Last 4 characters MUST be digits
     for i in range(len(fixed) - 4, len(fixed)):
         if fixed[i].isdigit() is False:
             if fixed[i] == 'O': fixed[i] = '0'
@@ -62,43 +79,41 @@ def clean_and_validate_indian_plate(raw_text: str) -> str | None:
             elif fixed[i] == 'B': fixed[i] = '8'
 
     fixed_str = "".join(fixed)
-    if INDIAN_PLATE_REGEX.match(fixed_str):
+    if fixed_str[:2] in VALID_INDIAN_STATES and INDIAN_PLATE_REGEX.match(fixed_str):
         return fixed_str
 
     return None
 
 def preprocess_plate_crop(crop_img: np.ndarray) -> np.ndarray:
-    """Apply grayscale, resizing, CLAHE contrast enhancement, and adaptive thresholding for optimal OCR."""
+    """Enhanced preprocessing for OCR: Upscale + Grayscale + CLAHE Contrast Enhancement."""
     if crop_img is None or crop_img.size == 0:
         return crop_img
 
     # 1. Convert to Grayscale
     gray = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
 
-    # 2. Resize to standard width (300px) maintaining aspect ratio
+    # 2. Resize / Upscale to standard width (350px) for crisp character recognition
     h, w = gray.shape[:2]
     if w > 0:
-        target_w = 300
+        target_w = 350
         target_h = int(h * (target_w / float(w)))
-        gray = cv2.resize(gray, (target_w, max(target_h, 60)), interpolation=cv2.INTER_CUBIC)
+        gray = cv2.resize(gray, (target_w, max(target_h, 70)), interpolation=cv2.INTER_CUBIC)
 
     # 3. CLAHE Contrast Limited Adaptive Histogram Equalization
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     contrast_enhanced = clahe.apply(gray)
 
-    # 4. Bilateral Filter to reduce noise while keeping edges sharp
-    denoised = cv2.bilateralFilter(contrast_enhanced, 9, 75, 75)
+    # 4. Light Bilateral Filter to smooth noise while preserving sharp character edges
+    denoised = cv2.bilateralFilter(contrast_enhanced, 5, 50, 50)
 
-    # 5. Otsu's Adaptive Thresholding
-    _, binarized = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    return binarized
+    return denoised
 
 def run_anpr_pipeline():
-    parser = argparse.ArgumentParser(description="End-to-End ANPR Pipeline (YOLOv8 + EasyOCR + RegEx)")
+    parser = argparse.ArgumentParser(description="End-to-End ANPR Pipeline (YOLOv8 + EasyOCR + Strict RegEx)")
     parser.add_argument("--source", type=str, required=True, help="Path to video file or camera index (e.g. 0)")
     parser.add_argument("--weights", type=str, default="", help="Custom YOLO weights path (defaults to runs/detect_plate/weights/best.pt)")
     parser.add_argument("--conf", type=float, default=0.60, help="YOLO plate detection confidence threshold (default: 0.60)")
+    parser.add_argument("--min-ocr-conf", type=float, default=0.35, help="Minimum OCR confidence threshold to log (default: 0.35)")
     parser.add_argument("--cooldown", type=float, default=3.0, help="Deduplication cooldown in seconds (default: 3.0)")
     args = parser.parse_args()
 
@@ -122,11 +137,12 @@ def run_anpr_pipeline():
     print("===================================================")
     print("        ANPR System Pipeline (YOLO + OCR)         ")
     print("===================================================")
-    print(f"Loading YOLO Model : {weights_path}")
+    print(f"Loading YOLO Model   : {weights_path}")
     model = YOLO(str(weights_path))
 
-    print("Initializing EasyOCR Engine (English)...")
+    print("Initializing EasyOCR Engine (English + Whitelist)...")
     reader = easyocr.Reader(['en'], gpu=True if cv2.cuda.getCudaEnabledDeviceCount() > 0 else False)
+    allowlist = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
     # Setup CSV Output Logging
     results_dir = base_dir / "runs" / "anpr_results"
@@ -159,24 +175,22 @@ def run_anpr_pipeline():
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out_video = cv2.VideoWriter(str(out_video_path), fourcc, fps, (width, height))
 
-    print(f"Processing Video   : {args.source}")
-    print(f"Confidence Filter  : {args.conf}")
-    print(f"Logging Results to : {csv_file}")
-    print(f"Output Video       : {out_video_path}")
+    print(f"Processing Video     : {args.source}")
+    print(f"YOLO Conf Filter     : {args.conf}")
+    print(f"Min OCR Conf Filter  : {args.min_ocr_conf}")
+    print(f"Logging Results to   : {csv_file}")
+    print(f"Output Video         : {out_video_path}")
     print("---------------------------------------------------")
     print("  Timestamp          | Plate Number | YOLO Conf | OCR Conf")
     print("---------------------------------------------------")
 
     seen_plates = {}  # {plate_str: last_seen_timestamp}
-    frame_count = 0
 
     try:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-
-            frame_count += 1
 
             # Run YOLO plate detection
             results = model.predict(source=frame, conf=args.conf, verbose=False)
@@ -198,10 +212,14 @@ def run_anpr_pipeline():
                 # Preprocess cropped plate image
                 processed_crop = preprocess_plate_crop(plate_crop)
 
-                # Run EasyOCR on preprocessed crop
-                ocr_results = reader.readtext(processed_crop)
+                # Run EasyOCR with character whitelist
+                ocr_results = reader.readtext(processed_crop, allowlist=allowlist)
 
                 for (bbox, text, ocr_conf) in ocr_results:
+                    # Filter out low-confidence OCR guesses
+                    if ocr_conf < args.min_ocr_conf:
+                        continue
+
                     valid_plate = clean_and_validate_indian_plate(text)
 
                     if valid_plate:
@@ -221,16 +239,13 @@ def run_anpr_pipeline():
                             csv_handle.flush()
 
                         # Draw bounding box and label on video frame
-                        label = f"{valid_plate} ({yolo_conf:.0%})"
+                        label = f"{valid_plate} ({ocr_conf:.0%})"
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         
                         # Text background box
                         (w_lbl, h_lbl), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
                         cv2.rectangle(frame, (x1, y1 - h_lbl - 10), (x1 + w_lbl, y1), (0, 255, 0), cv2.FILLED)
                         cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-                    else:
-                        # Draw detection box without OCR text if format doesn't match RegEx
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
 
             out_video.write(frame)
 

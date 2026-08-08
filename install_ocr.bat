@@ -1,16 +1,16 @@
 @echo off
 echo ===================================================
-echo Installing EasyOCR for ANPR Pipeline
+echo Installing PaddleOCR for ANPR Pipeline
 echo ===================================================
 
-echo Installing EasyOCR and dependencies...
-pip install easyocr opencv-python pyyaml pandas
+echo Installing PaddlePaddle and PaddleOCR...
+pip install paddlepaddle paddleocr opencv-python pyyaml pandas
 
 echo.
 echo ===================================================
-echo Verifying EasyOCR Installation...
+echo Verifying PaddleOCR Installation...
 echo ===================================================
-python -c "import easyocr; print('EasyOCR Version:', easyocr.__version__); print('EasyOCR installed successfully!')"
+python -c "from paddleocr import PaddleOCR; print('PaddleOCR installed successfully!')"
 
 echo.
 echo Setup Complete!

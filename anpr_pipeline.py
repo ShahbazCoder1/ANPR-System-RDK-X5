@@ -1,0 +1,252 @@
+import argparse
+import csv
+import os
+import re
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+import cv2
+import numpy as np
+
+# Suppress PyTorch / Ultralytics verbose logs where possible
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+# Indian License Plate RegEx: State(2) + District(1-2) + Series(1-3) + Number(4)
+# Examples: MH12AB1234, KA01C5678, DL3CAB1234, HR26DQ5555
+INDIAN_PLATE_REGEX = re.compile(r"^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$")
+
+def clean_and_validate_indian_plate(raw_text: str) -> str | None:
+    """Clean raw OCR text and validate against Indian plate RegEx format."""
+    if not raw_text:
+        return None
+    
+    # Uppercase and strip whitespace / non-alphanumeric characters
+    cleaned = re.sub(r"[^A-Z0-9]", "", raw_text.upper())
+
+    # Basic length check: Indian plates are between 8 and 11 characters
+    if not (8 <= len(cleaned) <= 11):
+        return None
+
+    # Check if cleaned text matches Indian plate format
+    if INDIAN_PLATE_REGEX.match(cleaned):
+        return cleaned
+
+    # Common OCR character confusion fixes based on position heuristics
+    # E.g., Replace 'O' with '0' in district/number parts, '0' with 'O' in state part
+    fixed = list(cleaned)
+    
+    # State code (First 2 chars MUST be letters)
+    for i in range(2):
+        if fixed[i] == '0': fixed[i] = 'O'
+        elif fixed[i] == '1': fixed[i] = 'I'
+        elif fixed[i] == '8': fixed[i] = 'B'
+        elif fixed[i] == '5': fixed[i] = 'S'
+
+    # District code (Next 1-2 chars MUST be numbers)
+    for i in range(2, 4):
+        if i < len(fixed) and fixed[i].isdigit() is False:
+            if fixed[i] == 'O': fixed[i] = '0'
+            elif fixed[i] == 'I': fixed[i] = '1'
+            elif fixed[i] == 'Z': fixed[i] = '2'
+            elif fixed[i] == 'S': fixed[i] = '5'
+            elif fixed[i] == 'B': fixed[i] = '8'
+
+    # Last 4 chars MUST be numbers
+    for i in range(len(fixed) - 4, len(fixed)):
+        if fixed[i].isdigit() is False:
+            if fixed[i] == 'O': fixed[i] = '0'
+            elif fixed[i] == 'I': fixed[i] = '1'
+            elif fixed[i] == 'Z': fixed[i] = '2'
+            elif fixed[i] == 'S': fixed[i] = '5'
+            elif fixed[i] == 'B': fixed[i] = '8'
+
+    fixed_str = "".join(fixed)
+    if INDIAN_PLATE_REGEX.match(fixed_str):
+        return fixed_str
+
+    return None
+
+def preprocess_plate_crop(crop_img: np.ndarray) -> np.ndarray:
+    """Apply grayscale, resizing, CLAHE contrast enhancement, and adaptive thresholding for optimal OCR."""
+    if crop_img is None or crop_img.size == 0:
+        return crop_img
+
+    # 1. Convert to Grayscale
+    gray = cv2.cvtColor(crop_img, cv2.COLOR_BGR2GRAY)
+
+    # 2. Resize to standard width (300px) maintaining aspect ratio
+    h, w = gray.shape[:2]
+    if w > 0:
+        target_w = 300
+        target_h = int(h * (target_w / float(w)))
+        gray = cv2.resize(gray, (target_w, max(target_h, 60)), interpolation=cv2.INTER_CUBIC)
+
+    # 3. CLAHE Contrast Limited Adaptive Histogram Equalization
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    contrast_enhanced = clahe.apply(gray)
+
+    # 4. Bilateral Filter to reduce noise while keeping edges sharp
+    denoised = cv2.bilateralFilter(contrast_enhanced, 9, 75, 75)
+
+    # 5. Otsu's Adaptive Thresholding
+    _, binarized = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    return binarized
+
+def run_anpr_pipeline():
+    parser = argparse.ArgumentParser(description="End-to-End ANPR Pipeline (YOLOv8 + EasyOCR + RegEx)")
+    parser.add_argument("--source", type=str, required=True, help="Path to video file or camera index (e.g. 0)")
+    parser.add_argument("--weights", type=str, default="", help="Custom YOLO weights path (defaults to runs/detect_plate/weights/best.pt)")
+    parser.add_argument("--conf", type=float, default=0.60, help="YOLO plate detection confidence threshold (default: 0.60)")
+    parser.add_argument("--cooldown", type=float, default=3.0, help="Deduplication cooldown in seconds (default: 3.0)")
+    args = parser.parse_args()
+
+    # Load Ultralytics YOLO & EasyOCR
+    try:
+        from ultralytics import YOLO
+        import easyocr
+    except ImportError as e:
+        print(f"[ERROR] Required package missing: {e}")
+        print("Please run setup_env.bat and install_ocr.bat first!")
+        sys.exit(1)
+
+    base_dir = Path(__file__).parent.resolve()
+    weights_path = Path(args.weights) if args.weights else base_dir / "runs" / "detect_plate" / "weights" / "best.pt"
+
+    if not weights_path.exists():
+        print(f"[ERROR] Model weights file not found: {weights_path}")
+        print("Please run python train.py first to train the model!")
+        sys.exit(1)
+
+    print("===================================================")
+    print("        ANPR System Pipeline (YOLO + OCR)         ")
+    print("===================================================")
+    print(f"Loading YOLO Model : {weights_path}")
+    model = YOLO(str(weights_path))
+
+    print("Initializing EasyOCR Engine (English)...")
+    reader = easyocr.Reader(['en'], gpu=True if cv2.cuda.getCudaEnabledDeviceCount() > 0 else False)
+
+    # Setup CSV Output Logging
+    results_dir = base_dir / "runs" / "anpr_results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    csv_file = results_dir / "plates_log.csv"
+
+    file_exists = csv_file.exists()
+    csv_handle = open(csv_file, mode="a", newline="", encoding="utf-8")
+    csv_writer = csv.writer(csv_handle)
+
+    if not file_exists:
+        csv_writer.writerow(["Timestamp", "Plate_Number", "YOLO_Confidence", "OCR_Confidence", "Source_File"])
+        csv_handle.flush()
+
+    # Determine input source (file or camera index)
+    source_val = int(args.source) if args.source.isdigit() else args.source
+    cap = cv2.VideoCapture(source_val)
+
+    if not cap.isOpened():
+        print(f"[ERROR] Cannot open video source: {args.source}")
+        sys.exit(1)
+
+    # Prepare Video Writer
+    source_name = Path(args.source).stem if isinstance(source_val, str) else "live_cam"
+    out_video_path = results_dir / f"anpr_{source_name}.mp4"
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out_video = cv2.VideoWriter(str(out_video_path), fourcc, fps, (width, height))
+
+    print(f"Processing Video   : {args.source}")
+    print(f"Confidence Filter  : {args.conf}")
+    print(f"Logging Results to : {csv_file}")
+    print(f"Output Video       : {out_video_path}")
+    print("---------------------------------------------------")
+    print("  Timestamp          | Plate Number | YOLO Conf | OCR Conf")
+    print("---------------------------------------------------")
+
+    seen_plates = {}  # {plate_str: last_seen_timestamp}
+    frame_count = 0
+
+    try:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            frame_count += 1
+
+            # Run YOLO plate detection
+            results = model.predict(source=frame, conf=args.conf, verbose=False)
+            boxes = results[0].boxes
+
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                yolo_conf = float(box.conf[0])
+
+                # Ensure valid bounding box crop coordinates within frame bounds
+                h_f, w_f = frame.shape[:2]
+                x1_c, y1_c = max(0, x1), max(0, y1)
+                x2_c, y2_c = min(w_f, x2), min(h_f, y2)
+
+                plate_crop = frame[y1_c:y2_c, x1_c:x2_c]
+                if plate_crop.size == 0:
+                    continue
+
+                # Preprocess cropped plate image
+                processed_crop = preprocess_plate_crop(plate_crop)
+
+                # Run EasyOCR on preprocessed crop
+                ocr_results = reader.readtext(processed_crop)
+
+                for (bbox, text, ocr_conf) in ocr_results:
+                    valid_plate = clean_and_validate_indian_plate(text)
+
+                    if valid_plate:
+                        curr_time = time.time()
+                        last_seen = seen_plates.get(valid_plate, 0)
+
+                        # Deduplication: Check cooldown period
+                        if (curr_time - last_seen) > args.cooldown:
+                            seen_plates[valid_plate] = curr_time
+                            timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                            # Print to Terminal
+                            print(f"  {timestamp_str} | {valid_plate:12} | {yolo_conf:.2f}      | {ocr_conf:.2f}")
+
+                            # Write to CSV
+                            csv_writer.writerow([timestamp_str, valid_plate, f"{yolo_conf:.2f}", f"{ocr_conf:.2f}", source_name])
+                            csv_handle.flush()
+
+                        # Draw bounding box and label on video frame
+                        label = f"{valid_plate} ({yolo_conf:.0%})"
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        
+                        # Text background box
+                        (w_lbl, h_lbl), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                        cv2.rectangle(frame, (x1, y1 - h_lbl - 10), (x1 + w_lbl, y1), (0, 255, 0), cv2.FILLED)
+                        cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+                    else:
+                        # Draw detection box without OCR text if format doesn't match RegEx
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+
+            out_video.write(frame)
+
+    except KeyboardInterrupt:
+        print("\n[INFO] Processing interrupted by user.")
+
+    finally:
+        cap.release()
+        out_video.release()
+        csv_handle.close()
+
+    print("===================================================")
+    print(" Processing Complete!")
+    print(f" Plates Log CSV : {csv_file}")
+    print(f" Output Video   : {out_video_path}")
+    print("===================================================")
+
+if __name__ == "__main__":
+    run_anpr_pipeline()

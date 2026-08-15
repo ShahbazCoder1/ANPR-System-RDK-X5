@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDK X5 ANPR Toll Booth System</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Top Navigation Bar -->
+        <header class="navbar">
+            <div class="logo-group">
+                <div class="logo-icon">🚗</div>
+                <div>
+                    <h1>RDK X5 ANPR Toll System</h1>
+                    <p class="subtitle">Edge AI License Plate Recognition & Automated Toll Booth</p>
+                </div>
+            </div>
+            <div class="header-badges">
+                <span class="badge badge-hardware">Sunrise 5 BPU</span>
+                <span class="badge badge-online" id="system-status">
+                    <span class="status-dot"></span> System Online
+                </span>
+            </div>
+        </header>
+
+        <!-- Stats Overview Cards -->
+        <div class="stats-grid">
+            <div class="card stat-card">
+                <div class="stat-icon">🚘</div>
+                <div class="stat-info">
+                    <span class="stat-label">Vehicles Detected (Today)</span>
+                    <span class="stat-value" id="stat-today-vehicles">0</span>
+                </div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon">💰</div>
+                <div class="stat-info">
+                    <span class="stat-label">Total Toll Collected (Today)</span>
+                    <span class="stat-value highlight" id="stat-today-toll">₹0</span>
+                </div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-info">
+                    <span class="stat-label">BPU Pipeline FPS</span>
+                    <span class="stat-value" id="stat-fps">0.0</span>
+                </div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-info">
+                    <span class="stat-label">System Uptime</span>
+                    <span class="stat-value" id="stat-uptime">0h 0m 0s</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area: Video Feed + Live Stats -->
+        <div class="main-grid">
+            <!-- Left: Live Video Feed -->
+            <div class="card video-card">
+                <div class="card-header">
+                    <h2>Live Camera Stream (GS130W MIPI / Video)</h2>
+                    <span class="live-indicator"><span class="pulse-dot"></span> LIVE</span>
+                </div>
+                <div class="video-wrapper">
+                    <img src="/api/feed" id="video-stream" alt="Live Camera Stream" onerror="this.src='/static/img/offline.png';">
+                </div>
+            </div>
+
+            <!-- Right: Toll Summary Details -->
+            <div class="card summary-card">
+                <div class="card-header">
+                    <h2>Toll Gate Summary</h2>
+                </div>
+                <div class="summary-body">
+                    <div class="summary-item">
+                        <span>Toll Tariff (Car/Van):</span>
+                        <strong>₹100 / pass</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>All-Time Vehicles:</span>
+                        <strong id="stat-total-vehicles">0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>All-Time Revenue:</span>
+                        <strong id="stat-total-revenue">₹0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Target BPU Device:</span>
+                        <strong>RDK X5 (10 TOPS)</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>AI Pipeline:</span>
+                        <strong>YOLOv8n + PaddleOCR</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Database:</span>
+                        <strong>SQLite (On-board)</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom: Recent Vehicle Detections Table -->
+        <div class="card table-card">
+            <div class="card-header">
+                <h2>Recent Vehicle Toll Records</h2>
+                <span class="record-counter" id="record-count">0 records</span>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Crop</th>
+                            <th>Plate Number</th>
+                            <th>Time</th>
+                            <th>Toll Fee</th>
+                            <th>Confidence</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="records-tbody">
+                        <tr>
+                            <td colspan="7" class="loading-row">Waiting for vehicles...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

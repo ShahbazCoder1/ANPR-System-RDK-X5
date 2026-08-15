@@ -1,0 +1,29 @@
+# Horizon OpenExplorer (OE) hb_mapper conversion config for RDK X5 (bayes-e)
+# Compiles YOLOv8n ONNX model to INT8 quantized .bin for BPU hardware acceleration
+
+model_parameters:
+  onnx_model: '../onnx_models/best.onnx'
+  march: "bayes-e"
+  layer_out_dump: False
+  working_dir: '../output_bins'
+  output_model_file_prefix: 'yolov8n_plate_bayese_640x640_nv12'
+
+input_parameters:
+  input_name: "images"
+  # Hardware input is NV12 (zero-copy from camera ISP)
+  input_type_rt: 'nv12'
+  # Model was trained with RGB inputs
+  input_type_train: 'rgb'
+  input_layout_train: 'NCHW'
+  # Normalization: YOLOv8 expects pixels scaled by 1/255 (0.003921568627451)
+  norm_type: 'data_scale'
+  scale_value: 0.003921568627451
+
+calibration_parameters:
+  cal_data_dir: '../calibration_data'
+  calibration_type: 'default'
+  max_track_iter: 20
+
+compiler_parameters:
+  optimize_level: 'O3'
+  compile_mode: 'latency'

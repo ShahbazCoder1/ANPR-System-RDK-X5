@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 import cv2
 from flask import Flask, render_template, Response, jsonify, send_from_directory
-from ..src.database import TollDatabase
+from src.database import TollDatabase
 
 # Global frame buffer for live MJPEG video stream
 current_frame_jpeg = None

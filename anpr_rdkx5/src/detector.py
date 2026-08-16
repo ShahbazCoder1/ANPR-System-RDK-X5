@@ -2,7 +2,10 @@ import os
 from pathlib import Path
 import cv2
 import numpy as np
-from .utils import bgr2nv12, letterbox_resize
+try:
+    from src.utils import bgr2nv12, letterbox_resize
+except ImportError:
+    from .utils import bgr2nv12, letterbox_resize
 
 class PlateDetector:
     """YOLOv8n License Plate Detector for RDK X5 (BPU-accelerated .bin)."""

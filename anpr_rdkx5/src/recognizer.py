@@ -1,6 +1,9 @@
 import cv2
 import numpy as np
-from .plate_validator import clean_and_validate_plate
+try:
+    from src.plate_validator import clean_and_validate_plate
+except ImportError:
+    from .plate_validator import clean_and_validate_plate
 
 class PlateRecognizer:
     """PaddleOCR Plate Text Recognizer with multi-version preprocessing."""

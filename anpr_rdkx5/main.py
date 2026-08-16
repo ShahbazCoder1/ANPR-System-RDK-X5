@@ -7,6 +7,9 @@ from datetime import datetime
 from pathlib import Path
 import cv2
 
+# Ensure project root is in sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from src.camera import CameraStream
 from src.database import TollDatabase
 from src.detector import PlateDetector

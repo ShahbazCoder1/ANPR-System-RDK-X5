@@ -1,9 +1,8 @@
 # RDK X5 Board Dependencies (Ubuntu 22.04 LTS / Python 3.10)
-# NOTE: numpy must be < 2.0 due to C++ binary bindings in hbm-runtime
+# NOTE: numpy must be < 2.0 due to C++ binary bindings in hobot_dnn
 numpy>=1.23.5,<2.0.0
 opencv-python>=4.8.0
-hbm-runtime
 scipy>=1.10.0
 flask>=3.0.0
-paddlepaddle==2.6.2
-paddleocr==2.9.1
+# RapidOCR uses ONNX Runtime (no PaddlePaddle conflicts with hobot_dnn on RDK X5)
+rapidocr-onnxruntime>=1.3.0

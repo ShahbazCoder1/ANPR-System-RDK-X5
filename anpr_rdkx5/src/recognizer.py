@@ -6,21 +6,58 @@ except ImportError:
     from .plate_validator import clean_and_validate_plate
 
 class PlateRecognizer:
-    """PaddleOCR Plate Text Recognizer with multi-version preprocessing."""
+    """OCR Plate Text Recognizer with multi-engine support.
+    
+    Tries engines in order:
+    1. RapidOCR (ONNX Runtime backend - no PaddlePaddle conflicts on RDK X5)
+    2. PaddleOCR (full PaddlePaddle - works on laptop, conflicts on RDK X5)
+    3. EasyOCR (PyTorch backend - fallback)
+    """
 
     def __init__(self, use_gpu: bool = False):
         self.ocr = None
+        self.engine_type = None  # "rapidocr", "paddleocr", or "easyocr"
         self._init_engine(use_gpu)
 
     def _init_engine(self, use_gpu: bool):
-        """Initialize PaddleOCR engine."""
+        """Initialize OCR engine with automatic fallback chain."""
+
+        # 1. Try RapidOCR first (best for RDK X5 — uses ONNX Runtime, no PaddlePaddle)
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            print("[OCR] Initializing RapidOCR (ONNX Runtime backend)...")
+            self.ocr = RapidOCR()
+            self.engine_type = "rapidocr"
+            print("[OCR] RapidOCR Engine initialized successfully.")
+            return
+        except ImportError:
+            print("[OCR] RapidOCR not installed, trying PaddleOCR...")
+        except Exception as e:
+            print(f"[OCR] RapidOCR init failed: {e}, trying PaddleOCR...")
+
+        # 2. Try PaddleOCR (works on laptop, but conflicts with hobot_dnn on RDK X5)
         try:
             from paddleocr import PaddleOCR
             print("[OCR] Initializing PaddleOCR Engine...")
-            self.ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=use_gpu, enable_mkldnn=False)
-            print("[OCR] PaddleOCR Engine initialized.")
+            self.ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, 
+                                 use_gpu=use_gpu, enable_mkldnn=False)
+            self.engine_type = "paddleocr"
+            print("[OCR] PaddleOCR Engine initialized successfully.")
+            return
         except Exception as e:
-            print(f"[WARN] PaddleOCR initialization note: {e}")
+            print(f"[OCR] PaddleOCR init failed: {e}, trying EasyOCR...")
+
+        # 3. Try EasyOCR (PyTorch fallback)
+        try:
+            import easyocr
+            print("[OCR] Initializing EasyOCR (PyTorch backend)...")
+            self.ocr = easyocr.Reader(['en'], gpu=use_gpu)
+            self.engine_type = "easyocr"
+            print("[OCR] EasyOCR Engine initialized successfully.")
+            return
+        except Exception as e:
+            print(f"[ERROR] No OCR engine available: {e}")
+            print("[ERROR] Install one: pip3 install rapidocr-onnxruntime")
 
     def preprocess_crop(self, crop_img: np.ndarray) -> list[np.ndarray]:
         """Return 3 enhanced versions of the plate crop (Upscaled, CLAHE, Sharpened)."""
@@ -55,6 +92,37 @@ class PlateRecognizer:
 
         return results
 
+    def _run_ocr(self, image: np.ndarray) -> list[tuple[str, float]]:
+        """Run OCR on a single image, returns list of (text, confidence) tuples."""
+        results = []
+
+        if self.engine_type == "rapidocr":
+            res = self.ocr(image)
+            if res and res[0]:
+                for line in res[0]:
+                    # RapidOCR format: [box_coords, text, confidence]
+                    if len(line) >= 3:
+                        txt, score = str(line[1]), float(line[2])
+                        results.append((txt, score))
+
+        elif self.engine_type == "paddleocr":
+            res = self.ocr.ocr(image, cls=True)
+            if res and res[0]:
+                for line in res[0]:
+                    if len(line) >= 2 and len(line[1]) >= 2:
+                        txt, score = line[1][0], float(line[1][1])
+                        results.append((txt, score))
+
+        elif self.engine_type == "easyocr":
+            res = self.ocr.readtext(image)
+            if res:
+                for line in res:
+                    if len(line) >= 3:
+                        txt, score = str(line[1]), float(line[2])
+                        results.append((txt, score))
+
+        return results
+
     def recognize(self, plate_crop: np.ndarray) -> tuple[str | None, float, str]:
         """
         Run OCR on plate crop with multi-version preprocessing and validation.
@@ -73,25 +141,23 @@ class PlateRecognizer:
 
         for crop_ver in crop_versions:
             try:
-                res = self.ocr.ocr(crop_ver, cls=True)
+                ocr_results = self._run_ocr(crop_ver)
             except Exception:
                 continue
 
-            if res and res[0]:
+            if ocr_results:
                 texts = []
                 confs = []
-                for line in res[0]:
-                    if len(line) >= 2 and len(line[1]) >= 2:
-                        txt, score = line[1][0], float(line[1][1])
-                        texts.append(txt)
-                        confs.append(score)
+                for txt, score in ocr_results:
+                    texts.append(txt)
+                    confs.append(score)
 
-                        # Validate individual text line
-                        valid = clean_and_validate_plate(txt)
-                        if valid and score > best_conf:
-                            best_plate = valid
-                            best_conf = score
-                            best_raw = txt
+                    # Validate individual text line
+                    valid = clean_and_validate_plate(txt)
+                    if valid and score > best_conf:
+                        best_plate = valid
+                        best_conf = score
+                        best_raw = txt
 
                 # Validate multi-line concatenated text
                 if len(texts) > 1:

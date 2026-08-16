@@ -71,23 +71,48 @@ scp -r anpr_rdkx5 sunrise@<rdk-x5-ip>:~/
 SSH into your RDK X5:
 ```bash
 ssh sunrise@<rdk-x5-ip>
-cd ~/anpr_rdkx5
+cd ~/ANPR-System-RDK-X5/anpr_rdkx5
 chmod +x setup.sh
 ./setup.sh
 ```
 
 ### 3. Place your Compiled BPU Model
-Ensure your compiled model from the Ubuntu VM conversion is placed at:
-`anpr_rdkx5/models/yolov8n_plate_bayese_640x640_nv12.bin`
+Ensure your compiled `.bin` model from the Ubuntu VM conversion is placed inside `models/`:
+```bash
+# Example from your Ubuntu VM:
+scp yolov8n_plate_bayese_640x640_nv12.bin sunrise@<rdk-x5-ip>:~/ANPR-System-RDK-X5/anpr_rdkx5/models/
+```
+Verify:
+```bash
+ls -lh models/
+# Expected: yolov8n_plate_bayese_640x640_nv12.bin (~6 MB)
+```
 
-### 4. Run the Pipeline
+---
 
-#### Phase 1: Test with a Video File
+## Troubleshooting & Common Fixes
+
+### 1. Fix PaddleOCR Error (`libpaddle.so` missing `libssl1.1`)
+On Ubuntu 22.04 (ARM64), PaddlePaddle requires `libssl1.1`:
+```bash
+wget http://ports.ubuntu.com/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_arm64.deb
+sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_arm64.deb
+rm -f libssl1.1_1.1.1f-1ubuntu2_arm64.deb
+```
+
+### 2. Fix Detector Error (`No module named 'ultralytics'`)
+This indicates the `.bin` model file was not found in `models/`. Ensure `yolov8n_plate_bayese_640x640_nv12.bin` is located inside `anpr_rdkx5/models/`.
+
+---
+
+## 4. Run the Pipeline
+
+### Phase 1: Test with a Prerecorded Video File
 ```bash
 python3 main.py --source test_video.mp4 --conf 0.60 --toll 100
 ```
 
-#### Phase 2: Run with GS130W MIPI Stereo Camera
+### Phase 2: Run with GS130W MIPI Stereo Camera
 ```bash
 python3 main.py --source mipi --conf 0.60 --toll 100
 ```

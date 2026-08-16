@@ -31,6 +31,10 @@ class PlateDetector:
     def _load_model(self):
         """Load BPU hbm_runtime model, with fallback for local testing."""
         if str(self.model_path).endswith(".bin"):
+            if not self.model_path.exists():
+                print(f"[ERROR] BPU model file not found: {self.model_path}")
+                print("Please copy 'yolov8n_plate_bayese_640x640_nv12.bin' into your 'models/' folder!")
+                return
             try:
                 from hbm_runtime import HB_HBMRuntime
                 print(f"[DETECTOR] Loading BPU Model on RDK X5: {self.model_path}")
@@ -39,7 +43,8 @@ class PlateDetector:
                 print("[DETECTOR] BPU Model loaded successfully (~5ms inference ready).")
                 return
             except Exception as e:
-                print(f"[WARN] Failed to load hbm_runtime BPU model: {e}")
+                print(f"[ERROR] Failed to initialize BPU model with hbm_runtime: {e}")
+                return
 
         # Fallback to PyTorch/Ultralytics (for development/testing on laptop)
         try:

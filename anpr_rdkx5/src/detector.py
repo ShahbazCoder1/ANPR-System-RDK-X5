@@ -157,13 +157,12 @@ class PlateDetector:
             else:
                 preds = np.array(outputs[0], copy=False).astype(np.float32)
             
-            # Squeeze batch dimension
-            while len(preds.shape) > 2 and preds.shape[0] == 1:
-                preds = preds[0]
+            # Squeeze ALL size-1 dimensions: (1, 5, 8400, 1) → (5, 8400)
+            preds = np.squeeze(preds)
             
             # YOLOv8 output is (5, 8400) for single-class: transpose to (8400, 5)
             if len(preds.shape) == 2 and preds.shape[0] < preds.shape[1]:
-                preds = preds.T
+                preds = preds.T  # Now (8400, 5): each row = [cx, cy, w, h, conf]
 
             for row in preds:
                 if len(row) < 5:

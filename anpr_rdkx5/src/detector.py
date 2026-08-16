@@ -16,10 +16,10 @@ class PlateDetector:
         self.bpu_model = None
         self.fallback_model = None
         self.is_bpu = False
+        self.use_parser = False  # True if hobot_dnn >= 2.6.1 with built-in YOLO parser
         
         base_dir = Path(__file__).resolve().parent.parent
         if model_path is None:
-            # Default to BPU .bin model
             default_bin = base_dir / "models" / "yolov8n_plate_bayese_640x640_nv12.bin"
             default_onnx = base_dir.parent / "runs" / "detect_plate" / "weights" / "best.pt"
             self.model_path = default_bin if default_bin.exists() else default_onnx
@@ -29,21 +29,36 @@ class PlateDetector:
         self._load_model()
 
     def _load_model(self):
-        """Load BPU hbm_runtime model, with fallback for local testing."""
+        """Load BPU model via hobot_dnn (pyeasy_dnn), with fallback to Ultralytics."""
         if str(self.model_path).endswith(".bin"):
             if not self.model_path.exists():
                 print(f"[ERROR] BPU model file not found: {self.model_path}")
                 print("Please copy 'yolov8n_plate_bayese_640x640_nv12.bin' into your 'models/' folder!")
                 return
             try:
-                from hbm_runtime import HB_HBMRuntime
+                from hobot_dnn import pyeasy_dnn as dnn
                 print(f"[DETECTOR] Loading BPU Model on RDK X5: {self.model_path}")
-                self.bpu_model = HB_HBMRuntime(str(self.model_path))
+                
+                # Try loading with built-in ultralytics_yolo parser (hobot_dnn >= 2.6.1)
+                try:
+                    models = dnn.load(str(self.model_path), parser="ultralytics_yolo")
+                    self.bpu_model = models[0]
+                    self.use_parser = True
+                    print("[DETECTOR] BPU Model loaded with built-in YOLO parser (NMS on BPU).")
+                except Exception:
+                    # Fallback: load without parser, manual post-processing
+                    models = dnn.load(str(self.model_path))
+                    self.bpu_model = models[0]
+                    self.use_parser = False
+                    print("[DETECTOR] BPU Model loaded (manual post-processing mode).")
+                
                 self.is_bpu = True
                 print("[DETECTOR] BPU Model loaded successfully (~5ms inference ready).")
                 return
+            except ImportError:
+                print("[WARN] hobot_dnn not found. Not running on RDK X5 board.")
             except Exception as e:
-                print(f"[ERROR] Failed to initialize BPU model with hbm_runtime: {e}")
+                print(f"[ERROR] Failed to initialize BPU model: {e}")
                 return
 
         # Fallback to PyTorch/Ultralytics (for development/testing on laptop)
@@ -74,37 +89,88 @@ class PlateDetector:
         return []
 
     def _detect_bpu(self, frame: np.ndarray, h_orig: int, w_orig: int) -> list[tuple[int, int, int, int, float]]:
-        """Execute detection on Horizon BPU using NV12 input format."""
+        """Execute detection on Horizon BPU via hobot_dnn."""
         # 1. Letterbox resize to 640x640
         resized, scale, (dx, dy) = letterbox_resize(frame, (640, 640))
-        # 2. Convert to NV12
+        # 2. Convert to NV12 for BPU hardware input
         nv12_input = bgr2nv12(resized)
+
         # 3. BPU Forward pass
-        outputs = self.bpu_model.run(nv12_input)
-        
-        # 4. Parse BPU output tensors & apply NMS
-        # BPU output gives raw predictions (1, 5, 8400) or similar
+        outputs = self.bpu_model.forward([nv12_input])
+
         boxes = []
-        if len(outputs) > 0:
-            preds = outputs[0]
-            if len(preds.shape) == 3 and preds.shape[1] < preds.shape[2]:
-                preds = np.transpose(preds[0], (1, 0))  # shape: (8400, 5)
-            elif len(preds.shape) == 3:
+
+        if self.use_parser:
+            # Built-in parser returns parsed results directly
+            try:
+                for det in outputs:
+                    if hasattr(det, 'buffer'):
+                        parsed = np.array(det.buffer, copy=False)
+                    else:
+                        parsed = np.array(det, copy=False)
+                    # Parse each detection row: [x1, y1, x2, y2, score, class_id]
+                    for row in parsed.reshape(-1, 6):
+                        conf = float(row[4])
+                        if conf >= self.conf_thresh:
+                            x1 = int(max(0, (row[0] - dx) / scale))
+                            y1 = int(max(0, (row[1] - dy) / scale))
+                            x2 = int(min(w_orig, (row[2] - dx) / scale))
+                            y2 = int(min(h_orig, (row[3] - dy) / scale))
+                            if x2 > x1 and y2 > y1:
+                                boxes.append((x1, y1, x2, y2, conf))
+            except Exception as e:
+                print(f"[WARN] Parser output parsing error: {e}, falling back to manual.")
+                boxes = self._parse_raw_outputs(outputs, scale, dx, dy, h_orig, w_orig)
+        else:
+            # Manual post-processing: raw BPU output tensors
+            boxes = self._parse_raw_outputs(outputs, scale, dx, dy, h_orig, w_orig)
+
+        return self._apply_nms(boxes)
+
+    def _parse_raw_outputs(self, outputs, scale, dx, dy, h_orig, w_orig):
+        """Parse raw BPU output tensors manually (no built-in parser)."""
+        boxes = []
+        
+        try:
+            # Get the first output tensor's buffer as numpy
+            if hasattr(outputs[0], 'buffer'):
+                preds = np.array(outputs[0].buffer, copy=False).astype(np.float32)
+            else:
+                preds = np.array(outputs[0], copy=False).astype(np.float32)
+            
+            # Squeeze batch dimension
+            while len(preds.shape) > 2 and preds.shape[0] == 1:
                 preds = preds[0]
+            
+            # YOLOv8 output is (5, 8400) for single-class: transpose to (8400, 5)
+            if len(preds.shape) == 2 and preds.shape[0] < preds.shape[1]:
+                preds = preds.T
 
             for row in preds:
-                conf = float(row[4]) if len(row) > 4 else 0.0
+                if len(row) < 5:
+                    continue
+                conf = float(row[4])
                 if conf >= self.conf_thresh:
-                    cx, cy, bw, bh = row[0], row[1], row[2], row[3]
-                    # Map back from letterbox to original frame coordinates
+                    cx, cy, bw, bh = float(row[0]), float(row[1]), float(row[2]), float(row[3])
                     x1 = int(max(0, (cx - bw / 2 - dx) / scale))
                     y1 = int(max(0, (cy - bh / 2 - dy) / scale))
                     x2 = int(min(w_orig, (cx + bw / 2 - dx) / scale))
                     y2 = int(min(h_orig, (cy + bh / 2 - dy) / scale))
                     if x2 > x1 and y2 > y1:
                         boxes.append((x1, y1, x2, y2, conf))
+        except Exception as e:
+            print(f"[WARN] Raw output parsing error: {e}")
+            # Debug: print output structure to help diagnose
+            for i, out in enumerate(outputs):
+                if hasattr(out, 'buffer'):
+                    arr = np.array(out.buffer, copy=False)
+                    print(f"  Output[{i}]: shape={arr.shape}, dtype={arr.dtype}")
+                elif hasattr(out, 'shape'):
+                    print(f"  Output[{i}]: shape={out.shape}, dtype={out.dtype}")
+                else:
+                    print(f"  Output[{i}]: type={type(out)}")
 
-        return self._apply_nms(boxes)
+        return boxes
 
     def _detect_fallback(self, frame: np.ndarray) -> list[tuple[int, int, int, int, float]]:
         """Fallback detection using Ultralytics."""

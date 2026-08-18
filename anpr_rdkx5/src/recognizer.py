@@ -85,11 +85,6 @@ class PlateRecognizer:
             enhanced_bgr = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
             results.append(enhanced_bgr)
 
-            # Version 3: Sharpened (effective on motion-blurred plates)
-            kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-            sharpened = cv2.filter2D(upscaled, -1, kernel)
-            results.append(sharpened)
-
         return results
 
     def _run_ocr(self, image: np.ndarray) -> list[tuple[str, float]]:

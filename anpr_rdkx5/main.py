@@ -282,8 +282,16 @@ def main():
 
                 for box in boxes:
                     x1, y1, x2, y2, yolo_conf = box
-                    x1_c, y1_c = max(0, x1), max(0, y1)
-                    x2_c, y2_c = min(w_f, x2), min(h_f, y2)
+                    
+                    # Expand bounding box by 50% for better OCR (BPU crops are tight)
+                    bw = x2 - x1
+                    bh = y2 - y1
+                    pad_x = int(bw * 0.5)
+                    pad_y = int(bh * 0.5)
+                    x1_c = max(0, x1 - pad_x)
+                    y1_c = max(0, y1 - pad_y)
+                    x2_c = min(w_f, x2 + pad_x)
+                    y2_c = min(h_f, y2 + pad_y)
 
                     plate_crop = frame[y1_c:y2_c, x1_c:x2_c]
                     if plate_crop.size == 0:

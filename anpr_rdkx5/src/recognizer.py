@@ -147,6 +147,10 @@ class PlateRecognizer:
                     texts.append(txt)
                     confs.append(score)
 
+                    # Track best raw text regardless of validation
+                    if score > best_conf and not best_plate:
+                        best_raw = txt
+                        
                     # Validate individual text line
                     valid = clean_and_validate_plate(txt)
                     if valid and score > best_conf:
@@ -158,6 +162,10 @@ class PlateRecognizer:
                 if len(texts) > 1:
                     concat_txt = "".join(texts)
                     avg_score = sum(confs) / len(confs)
+                    
+                    if avg_score > best_conf and not best_plate:
+                        best_raw = concat_txt
+
                     valid_concat = clean_and_validate_plate(concat_txt)
                     if valid_concat and avg_score > best_conf:
                         best_plate = valid_concat

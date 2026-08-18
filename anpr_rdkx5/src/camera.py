@@ -33,8 +33,10 @@ class CameraStream:
                 # Open camera: (video_index 0, fps 30, [w1, w2], [h1, h2], sensor_h, sensor_w)
                 ret = self.cam_obj.open_cam(0, -1, self.fps, [640, self.target_w], [640, self.target_h], self.target_h, self.target_w)
                 if ret != 0:
-                    print(f"[ERROR] Failed to open MIPI camera! Error code: {ret}")
+                    print(f"[ERROR] Failed to probe MIPI camera sensor (Error code: {ret}).")
+                    print("[INFO] Tip: Verify MIPI CSI ribbon cable orientation and connections on RDK X5.")
                     self.cam_obj = None
+                    self.is_mipi = False
                 else:
                     print("[CAMERA] GS130W MIPI Camera opened successfully (Zero-Copy NV12 ready).")
             except Exception as e:

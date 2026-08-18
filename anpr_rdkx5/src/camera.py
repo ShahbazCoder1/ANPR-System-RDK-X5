@@ -13,7 +13,9 @@ class CameraStream:
         self.target_h = height
         self.fps = fps
         self.loop_video = loop_video
-        self.is_mipi = str(source).lower().startswith("mipi")
+        src_str = str(source).lower()
+        self.is_mipi = src_str.startswith("mipi")
+        self.mipi_port = 1 if src_str == "mipi1" else 0
         self.cam_obj = None
         self.cap = None
         self.open()
@@ -28,17 +30,17 @@ class CameraStream:
                 except ImportError:
                     from hobot_vio_rdkx5 import libsrcampy as srcampy
 
-                print(f"[CAMERA] Initializing GS130W MIPI CSI Camera ({self.target_w}x{self.target_h} @ {self.fps}fps)...")
+                print(f"[CAMERA] Initializing GS130W MIPI CSI Camera on CAM{self.mipi_port} ({self.target_w}x{self.target_h} @ {self.fps}fps)...")
                 self.cam_obj = srcampy.Camera()
-                # Open camera: (video_index 0, fps 30, [w1, w2], [h1, h2], sensor_h, sensor_w)
-                ret = self.cam_obj.open_cam(0, -1, self.fps, [640, self.target_w], [640, self.target_h], self.target_h, self.target_w)
+                # Open camera: (video_index 0/1, fps 30, [w1, w2], [h1, h2], sensor_h, sensor_w)
+                ret = self.cam_obj.open_cam(self.mipi_port, -1, self.fps, [640, self.target_w], [640, self.target_h], self.target_h, self.target_w)
                 if ret != 0:
-                    print(f"[ERROR] Failed to probe MIPI camera sensor (Error code: {ret}).")
+                    print(f"[ERROR] Failed to probe MIPI camera sensor on CAM{self.mipi_port} (Error code: {ret}).")
                     print("[INFO] Tip: Verify MIPI CSI ribbon cable orientation and connections on RDK X5.")
                     self.cam_obj = None
                     self.is_mipi = False
                 else:
-                    print("[CAMERA] GS130W MIPI Camera opened successfully (Zero-Copy NV12 ready).")
+                    print(f"[CAMERA] GS130W MIPI Camera (CAM{self.mipi_port}) opened successfully (Zero-Copy NV12 ready).")
             except Exception as e:
                 print(f"[WARN] libsrcampy MIPI not available on host ({e}). Falling back to OpenCV.")
                 self.is_mipi = False

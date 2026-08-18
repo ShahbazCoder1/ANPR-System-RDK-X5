@@ -64,16 +64,22 @@ class PlateRecognizer:
         if crop_img is None or crop_img.size == 0:
             return []
 
-        # 1. Add a 15% padding border so edge characters aren't clipped
-        padding = max(8, int(crop_img.shape[0] * 0.15))
-        padded = cv2.copyMakeBorder(crop_img, padding, padding, padding, padding, cv2.BORDER_REPLICATE)
+        # 1. Add solid border padding (do NOT use REPLICATE as it stretches borders and confuses OCR)
+        # Calculate padding as 20% of the image size
+        pad_h = max(10, int(crop_img.shape[0] * 0.20))
+        pad_w = max(10, int(crop_img.shape[1] * 0.10))
+        
+        # Use solid gray padding instead of replicate to give clear contrast boundary
+        padded = cv2.copyMakeBorder(crop_img, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=[128, 128, 128])
 
         results = []
         h, w = padded.shape[:2]
 
         # Version 1: Upscaled Color Image
         if w > 0:
-            scale = max(1.0, 350.0 / w)
+            # RapidOCR likes text to be decently sized (height ~ 48-64px)
+            # If our padded height is only 40, upscale by 2x. If it's already 100, scale by 1.
+            scale = max(1.0, 100.0 / h)
             upscaled = cv2.resize(padded, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
             results.append(upscaled)
 

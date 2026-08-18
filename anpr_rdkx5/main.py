@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import re
 import threading
 import time
 from datetime import datetime
@@ -44,12 +45,21 @@ def parse_args():
     return parser.parse_args()
 
 
-# ---------- Background OCR Worker ----------
-# YOLO runs on every processed frame (fast BPU ~5ms),
-# but OCR runs in a background thread so it doesn't block the video stream.
+def iou(box1, box2):
+    """Calculate Intersection over Union between two boxes (x1,y1,x2,y2)."""
+    xa = max(box1[0], box2[0])
+    ya = max(box1[1], box2[1])
+    xb = min(box1[2], box2[2])
+    yb = min(box1[3], box2[3])
+    inter = max(0, xb - xa) * max(0, yb - ya)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - inter
+    return inter / union if union > 0 else 0
+
 
 class OCRWorker:
-    """Background OCR worker thread — processes plate crops without blocking video."""
+    """Background OCR worker — processes BEST plate crop per region, not every frame."""
 
     def __init__(self, recognizer, db, crops_dir, toll_amount, source_tag, cooldown):
         self.recognizer = recognizer
@@ -58,34 +68,96 @@ class OCRWorker:
         self.toll_amount = toll_amount
         self.source_tag = source_tag
         self.cooldown = cooldown
-        self._queue = deque(maxlen=20)  # Drop old crops if overwhelmed
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        # Recent results for drawing on frames (thread-safe)
+
+        # Track regions currently being tracked (to pick best crop before OCR)
+        # key: region_id, value: {box, best_crop, best_conf, last_seen, submitted}
+        self._tracked_regions = {}
+        self._next_region_id = 0
+
+        # OCR processing queue (only best crops go here)
+        self._ocr_queue = deque(maxlen=10)
+
+        # Recent results for drawing green boxes on frames
         self.recent_plates = {}  # {plate_text: (x1,y1,x2,y2,conf,expire_time)}
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def submit(self, plate_crop, box, yolo_conf, timestamp):
-        """Submit a plate crop for background OCR processing."""
+    def submit_detection(self, plate_crop, box, yolo_conf, timestamp):
+        """Called from main loop for every YOLO detection. Tracks regions and picks best crop."""
         with self._lock:
-            self._queue.append((plate_crop.copy(), box, yolo_conf, timestamp))
+            # Check if this box overlaps with an existing tracked region
+            matched_id = None
+            for rid, region in self._tracked_regions.items():
+                if iou(box, region["box"]) > 0.3:  # Same plate region
+                    matched_id = rid
+                    break
+
+            if matched_id is not None:
+                region = self._tracked_regions[matched_id]
+                region["last_seen"] = time.time()
+                # Keep the crop with highest YOLO confidence (sharpest detection)
+                if yolo_conf > region["best_conf"]:
+                    region["best_crop"] = plate_crop.copy()
+                    region["best_conf"] = yolo_conf
+                    region["box"] = box
+                    region["timestamp"] = timestamp
+            else:
+                # New region — start tracking
+                self._tracked_regions[self._next_region_id] = {
+                    "box": box,
+                    "best_crop": plate_crop.copy(),
+                    "best_conf": yolo_conf,
+                    "last_seen": time.time(),
+                    "timestamp": timestamp,
+                    "submitted": False,
+                }
+                self._next_region_id += 1
+
+    def flush_stale_regions(self):
+        """Called from main loop — submit best crop to OCR when region goes stale (plate left frame)."""
+        now = time.time()
+        with self._lock:
+            to_delete = []
+            for rid, region in self._tracked_regions.items():
+                # If plate hasn't been seen for 0.5s, submit best crop for OCR
+                if not region["submitted"] and (now - region["last_seen"]) > 0.5:
+                    region["submitted"] = True
+                    self._ocr_queue.append((
+                        region["best_crop"],
+                        region["box"],
+                        region["best_conf"],
+                        region["timestamp"]
+                    ))
+                # Clean up old tracked regions after 5s
+                if (now - region["last_seen"]) > 5.0:
+                    to_delete.append(rid)
+
+            for rid in to_delete:
+                del self._tracked_regions[rid]
 
     def _run(self):
-        """OCR worker loop — processes one crop at a time."""
+        """OCR worker loop — processes best crops only."""
         while not self._stop.is_set():
             item = None
             with self._lock:
-                if self._queue:
-                    item = self._queue.popleft()
+                if self._ocr_queue:
+                    item = self._ocr_queue.popleft()
 
             if item is None:
-                time.sleep(0.01)
+                time.sleep(0.02)
                 continue
 
             plate_crop, box, yolo_conf, ts = item
             x1, y1, x2, y2 = box
+            crop_h, crop_w = plate_crop.shape[:2]
+
+            # Skip very small crops (< 20px wide — too small for OCR)
+            if crop_w < 20 or crop_h < 10:
+                print(f"[OCR] Skipped tiny crop: {crop_w}x{crop_h}px (YOLO={yolo_conf:.0%})")
+                continue
 
             try:
                 best_plate, ocr_conf, raw_text = self.recognizer.recognize(plate_crop)
@@ -93,46 +165,44 @@ class OCRWorker:
                 print(f"[WARN] OCR error: {e}")
                 continue
 
-            # Debug: always print what OCR sees
+            # Always print debug — even when OCR returns nothing
             if raw_text:
-                print(f"[OCR] YOLO={yolo_conf:.0%} | Raw='{raw_text}' | Validated='{best_plate or 'REJECTED'}'")
-            
-            # Determine the plate text to use (validated or raw fallback)
-            import re
+                print(f"[OCR] YOLO={yolo_conf:.0%} crop={crop_w}x{crop_h} | Raw='{raw_text}' | Valid='{best_plate or 'REJECTED'}'")
+            else:
+                print(f"[OCR] YOLO={yolo_conf:.0%} crop={crop_w}x{crop_h} | (empty — OCR found no text)")
+                continue  # Nothing to save
+
+            # Use validated plate or cleaned raw text as fallback
             display_plate = best_plate
-            if not display_plate and raw_text:
-                # Use cleaned raw text as fallback
+            if not display_plate:
                 display_plate = re.sub(r"[^A-Z0-9]", "", raw_text.upper())
                 if len(display_plate) < 4:
-                    display_plate = None
+                    continue
 
-            if display_plate:
-                is_dup = self.db.is_duplicate(display_plate, current_time_sec=ts, cooldown_sec=self.cooldown)
-                if not is_dup:
-                    # Save plate crop image
-                    now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-                    crop_filename = f"crop_{now_str}_{display_plate}.jpg"
-                    crop_path = self.crops_dir / crop_filename
-                    cv2.imwrite(str(crop_path), plate_crop)
+            is_dup = self.db.is_duplicate(display_plate, current_time_sec=ts, cooldown_sec=self.cooldown)
+            if not is_dup:
+                now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
+                crop_filename = f"crop_{now_str}_{display_plate}.jpg"
+                crop_path = self.crops_dir / crop_filename
+                cv2.imwrite(str(crop_path), plate_crop)
 
-                    # Insert toll record into SQLite
-                    self.db.insert_record(
-                        plate_number=display_plate,
-                        yolo_conf=yolo_conf,
-                        ocr_conf=ocr_conf,
-                        raw_text=raw_text,
-                        crop_filename=crop_filename,
-                        source=self.source_tag,
-                        toll_amount=self.toll_amount,
-                        current_time_sec=ts
-                    )
+                self.db.insert_record(
+                    plate_number=display_plate,
+                    yolo_conf=yolo_conf,
+                    ocr_conf=ocr_conf,
+                    raw_text=raw_text,
+                    crop_filename=crop_filename,
+                    source=self.source_tag,
+                    toll_amount=self.toll_amount,
+                    current_time_sec=ts
+                )
 
-                    tag = "" if best_plate else " (raw)"
-                    time_display = datetime.now().strftime("%H:%M:%S")
-                    print(f" {time_display} | {display_plate:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag}{tag}")
+                tag = "" if best_plate else " (raw)"
+                time_display = datetime.now().strftime("%H:%M:%S")
+                print(f" {time_display} | {display_plate:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag}{tag}")
 
-                # Cache for drawing green box on subsequent frames
-                self.recent_plates[display_plate] = (x1, y1, x2, y2, ocr_conf, time.time() + 3.0)
+            # Cache for drawing green box on subsequent frames
+            self.recent_plates[display_plate] = (x1, y1, x2, y2, ocr_conf, time.time() + 3.0)
 
     def stop(self):
         self._stop.set()
@@ -206,7 +276,7 @@ def main():
 
             h_f, w_f = frame.shape[:2]
 
-            # Run YOLO detection only every N frames (BPU is fast, but saves CPU for OCR)
+            # Run YOLO detection every N frames (BPU is fast ~5ms)
             if frame_count % args.skip == 0:
                 boxes = detector.detect(frame)
 
@@ -219,13 +289,16 @@ def main():
                     if plate_crop.size == 0:
                         continue
 
-                    # Draw yellow detection box immediately (fast)
+                    # Draw yellow detection box immediately
                     draw_plate_box(frame, (x1, y1, x2, y2), None, yolo_conf)
 
-                    # Submit to background OCR worker (non-blocking)
-                    ocr_worker.submit(plate_crop, (x1, y1, x2, y2), yolo_conf, ts)
+                    # Submit to tracker — it picks best crop per region
+                    ocr_worker.submit_detection(plate_crop, (x1, y1, x2, y2), yolo_conf, ts)
 
-            # Overlay any recently recognized plates (green boxes from OCR worker)
+            # Flush stale regions to OCR queue (plates that left the frame)
+            ocr_worker.flush_stale_regions()
+
+            # Overlay recently recognized plates (green boxes from OCR worker)
             now = time.time()
             expired = []
             for plate, (px1, py1, px2, py2, pconf, expire) in ocr_worker.recent_plates.items():

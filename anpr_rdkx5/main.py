@@ -93,18 +93,31 @@ class OCRWorker:
                 print(f"[WARN] OCR error: {e}")
                 continue
 
-            if best_plate:
-                is_dup = self.db.is_duplicate(best_plate, current_time_sec=ts, cooldown_sec=self.cooldown)
+            # Debug: always print what OCR sees
+            if raw_text:
+                print(f"[OCR] YOLO={yolo_conf:.0%} | Raw='{raw_text}' | Validated='{best_plate or 'REJECTED'}'")
+            
+            # Determine the plate text to use (validated or raw fallback)
+            import re
+            display_plate = best_plate
+            if not display_plate and raw_text:
+                # Use cleaned raw text as fallback
+                display_plate = re.sub(r"[^A-Z0-9]", "", raw_text.upper())
+                if len(display_plate) < 4:
+                    display_plate = None
+
+            if display_plate:
+                is_dup = self.db.is_duplicate(display_plate, current_time_sec=ts, cooldown_sec=self.cooldown)
                 if not is_dup:
                     # Save plate crop image
                     now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-                    crop_filename = f"crop_{now_str}_{best_plate}.jpg"
+                    crop_filename = f"crop_{now_str}_{display_plate}.jpg"
                     crop_path = self.crops_dir / crop_filename
                     cv2.imwrite(str(crop_path), plate_crop)
 
                     # Insert toll record into SQLite
                     self.db.insert_record(
-                        plate_number=best_plate,
+                        plate_number=display_plate,
                         yolo_conf=yolo_conf,
                         ocr_conf=ocr_conf,
                         raw_text=raw_text,
@@ -114,36 +127,12 @@ class OCRWorker:
                         current_time_sec=ts
                     )
 
+                    tag = "" if best_plate else " (raw)"
                     time_display = datetime.now().strftime("%H:%M:%S")
-                    print(f" {time_display} | {best_plate:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag}")
+                    print(f" {time_display} | {display_plate:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag}{tag}")
 
                 # Cache for drawing green box on subsequent frames
-                self.recent_plates[best_plate] = (x1, y1, x2, y2, ocr_conf, time.time() + 3.0)
-            else:
-                # YOLO detected but OCR couldn't validate — still record if raw text exists
-                if raw_text and len(raw_text) >= 5:
-                    is_dup = self.db.is_duplicate(raw_text.upper(), current_time_sec=ts, cooldown_sec=self.cooldown)
-                    if not is_dup:
-                        now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-                        crop_filename = f"crop_{now_str}_RAW.jpg"
-                        crop_path = self.crops_dir / crop_filename
-                        cv2.imwrite(str(crop_path), plate_crop)
-
-                        import re
-                        cleaned = re.sub(r"[^A-Z0-9]", "", raw_text.upper())
-                        self.db.insert_record(
-                            plate_number=cleaned if len(cleaned) >= 5 else raw_text.upper(),
-                            yolo_conf=yolo_conf,
-                            ocr_conf=ocr_conf,
-                            raw_text=raw_text,
-                            crop_filename=crop_filename,
-                            source=self.source_tag,
-                            toll_amount=self.toll_amount,
-                            current_time_sec=ts
-                        )
-
-                        time_display = datetime.now().strftime("%H:%M:%S")
-                        print(f" {time_display} | {cleaned:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag} (raw)")
+                self.recent_plates[display_plate] = (x1, y1, x2, y2, ocr_conf, time.time() + 3.0)
 
     def stop(self):
         self._stop.set()

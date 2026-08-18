@@ -196,8 +196,24 @@ class OCRWorker:
         self._stop.set()
 
 
+def emergency_stop_listener():
+    """Background thread to forcefully exit if C++ libsrcampy hangs holding the GIL."""
+    try:
+        for line in sys.stdin:
+            if line.strip().lower() == 'q':
+                print("\n[EMERGENCY STOP] 'q' pressed. Forcefully killing process...")
+                os._exit(1)
+    except Exception:
+        pass
+
+
 def main():
     args = parse_args()
+
+    # Start emergency stop listener
+    stop_thread = threading.Thread(target=emergency_stop_listener, daemon=True)
+    stop_thread.start()
+    
     base_dir = Path(__file__).resolve().parent
     crops_dir = base_dir / "data" / "plate_crops"
     crops_dir.mkdir(parents=True, exist_ok=True)

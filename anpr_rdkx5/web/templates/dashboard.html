@@ -4,143 +4,251 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RDK X5 ANPR Toll Booth System</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <title>RDK X5 Edge ANPR | Automated Toll Booth System</title>
+    
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
 <body>
-    <div class="container">
-        <!-- Top Navigation Bar -->
+    <div class="app-layout">
+        <!-- Top Navigation Header -->
         <header class="navbar">
-            <div class="logo-group">
-                <div class="logo-icon">🚗</div>
-                <div>
-                    <h1>RDK X5 ANPR Toll System</h1>
-                    <p class="subtitle">Edge AI License Plate Recognition & Automated Toll Booth</p>
+            <div class="nav-brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-camera-viewfinder"></i>
+                </div>
+                <div class="brand-text">
+                    <div class="brand-title-wrap">
+                        <h1 class="brand-title">RDK X5 <span class="brand-highlight">ANPR System</span></h1>
+                        <span class="version-tag">v1.2 BPU</span>
+                    </div>
+                    <p class="brand-subtitle">Edge AI Automatic Number Plate Recognition & Toll Billing</p>
                 </div>
             </div>
-            <div class="header-badges">
-                <span class="badge badge-hardware">Sunrise 5 BPU</span>
-                <span class="badge badge-online" id="system-status">
-                    <span class="status-dot"></span> System Online
-                </span>
+
+            <div class="nav-status-group">
+                <div class="status-pill chip-pill">
+                    <i class="fa-solid fa-microchip"></i>
+                    <span>Sunrise 5 BPU (10 TOPS)</span>
+                </div>
+                <div class="status-pill live-pill" id="system-status">
+                    <span class="live-dot"></span>
+                    <span>System Active</span>
+                </div>
             </div>
         </header>
 
         <!-- Stats Overview Cards -->
-        <div class="stats-grid">
-            <div class="card stat-card">
-                <div class="stat-icon">🚘</div>
-                <div class="stat-info">
-                    <span class="stat-label">Vehicles Detected (Today)</span>
-                    <span class="stat-value" id="stat-today-vehicles">0</span>
+        <section class="stats-section">
+            <div class="stats-grid">
+                <!-- Stat Card 1 -->
+                <div class="stat-card card-vehicles">
+                    <div class="stat-icon-wrap">
+                        <i class="fa-solid fa-car-side"></i>
+                    </div>
+                    <div class="stat-data">
+                        <span class="stat-label">Vehicles Today</span>
+                        <div class="stat-value-wrap">
+                            <span class="stat-value" id="stat-today-vehicles">0</span>
+                            <span class="stat-unit">passes</span>
+                        </div>
+                    </div>
+                    <div class="stat-bg-icon">
+                        <i class="fa-solid fa-car"></i>
+                    </div>
                 </div>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-icon">💰</div>
-                <div class="stat-info">
-                    <span class="stat-label">Total Toll Collected (Today)</span>
-                    <span class="stat-value highlight" id="stat-today-toll">₹0</span>
-                </div>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-icon">⚡</div>
-                <div class="stat-info">
-                    <span class="stat-label">BPU Pipeline FPS</span>
-                    <span class="stat-value" id="stat-fps">0.0</span>
-                </div>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-icon">⏱️</div>
-                <div class="stat-info">
-                    <span class="stat-label">System Uptime</span>
-                    <span class="stat-value" id="stat-uptime">0h 0m 0s</span>
-                </div>
-            </div>
-        </div>
 
-        <!-- Main Content Area: Video Feed + Live Stats -->
-        <div class="main-grid">
-            <!-- Left: Live Video Feed -->
-            <div class="card video-card">
-                <div class="card-header">
-                    <h2>Live Camera Stream (GS130W MIPI / Video)</h2>
-                    <span class="live-indicator"><span class="pulse-dot"></span> LIVE</span>
+                <!-- Stat Card 2 -->
+                <div class="stat-card card-revenue">
+                    <div class="stat-icon-wrap">
+                        <i class="fa-solid fa-indian-rupee-sign"></i>
+                    </div>
+                    <div class="stat-data">
+                        <span class="stat-label">Toll Revenue (Today)</span>
+                        <div class="stat-value-wrap">
+                            <span class="stat-value highlight-green" id="stat-today-toll">₹0</span>
+                        </div>
+                    </div>
+                    <div class="stat-bg-icon">
+                        <i class="fa-solid fa-receipt"></i>
+                    </div>
                 </div>
-                <div class="video-wrapper">
-                    <img src="/api/feed" id="video-stream" alt="Live Camera Stream"
-                        onerror="this.src='/static/img/offline.png';">
+
+                <!-- Stat Card 3 -->
+                <div class="stat-card card-fps">
+                    <div class="stat-icon-wrap">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                    <div class="stat-data">
+                        <span class="stat-label">BPU Pipeline Speed</span>
+                        <div class="stat-value-wrap">
+                            <span class="stat-value highlight-blue" id="stat-fps">0.0</span>
+                            <span class="stat-unit">FPS</span>
+                        </div>
+                    </div>
+                    <div class="stat-bg-icon">
+                        <i class="fa-solid fa-gauge-high"></i>
+                    </div>
+                </div>
+
+                <!-- Stat Card 4 -->
+                <div class="stat-card card-uptime">
+                    <div class="stat-icon-wrap">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div class="stat-data">
+                        <span class="stat-label">System Uptime</span>
+                        <div class="stat-value-wrap">
+                            <span class="stat-value" id="stat-uptime">0h 0m</span>
+                        </div>
+                    </div>
+                    <div class="stat-bg-icon">
+                        <i class="fa-solid fa-server"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Video & Gate Details Grid -->
+        <main class="main-dashboard-grid">
+            <!-- Left: Live Video Stream -->
+            <section class="card video-panel">
+                <div class="panel-header">
+                    <div class="panel-header-left">
+                        <i class="fa-solid fa-video"></i>
+                        <h2>Live Detection Feed</h2>
+                        <span class="feed-source-badge"><i class="fa-solid fa-lens"></i> GS130W / Video</span>
+                    </div>
+                    <div class="panel-header-right">
+                        <span class="live-stream-badge">
+                            <span class="stream-pulse"></span>
+                            <span>STREAMING</span>
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="video-container">
+                    <div class="video-frame">
+                        <img src="/api/feed" id="video-stream" alt="Live Camera Stream"
+                            onerror="this.onerror=null; this.src='/static/img/offline.png';">
+                        <div class="video-overlay-hud">
+                            <div class="hud-item"><i class="fa-solid fa-shield-halved"></i> YOLOv8 BPU Active</div>
+                            <div class="hud-item"><i class="fa-solid fa-font"></i> RapidOCR On-Edge</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right: Toll Booth Specification & Summary -->
+            <aside class="card summary-panel">
+                <div class="panel-header">
+                    <div class="panel-header-left">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <h2>Toll Gate Summary</h2>
+                    </div>
+                </div>
+
+                <div class="summary-content">
+                    <div class="tariff-box">
+                        <div class="tariff-icon">
+                            <i class="fa-solid fa-tags"></i>
+                        </div>
+                        <div class="tariff-text">
+                            <span class="tariff-title">Standard Tariff</span>
+                            <span class="tariff-price">₹100 <small>/ vehicle</small></span>
+                        </div>
+                    </div>
+
+                    <div class="summary-list">
+                        <div class="summary-row">
+                            <span class="summary-label"><i class="fa-solid fa-chart-column"></i> All-Time Vehicles:</span>
+                            <strong class="summary-value" id="stat-total-vehicles">0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label"><i class="fa-solid fa-wallet"></i> All-Time Revenue:</span>
+                            <strong class="summary-value highlight-green" id="stat-total-revenue">₹0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label"><i class="fa-solid fa-microchip"></i> Target Hardware:</span>
+                            <strong class="summary-value">RDK X5 (10 TOPS)</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label"><i class="fa-solid fa-brain"></i> AI Pipeline:</span>
+                            <strong class="summary-value">YOLOv8n + RapidOCR</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label"><i class="fa-solid fa-database"></i> Local Storage:</span>
+                            <strong class="summary-value">SQLite DB (On-Board)</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span class="summary-label"><i class="fa-solid fa-shield-check"></i> Plate Format:</span>
+                            <strong class="summary-value">Indian HSRP (MoRTH)</strong>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Bottom: Vehicle Toll Logs Table -->
+        <section class="card table-panel">
+            <div class="panel-header">
+                <div class="panel-header-left">
+                    <i class="fa-solid fa-table-list"></i>
+                    <h2>Recent Vehicle Toll Records</h2>
+                </div>
+                <div class="panel-header-right">
+                    <span class="badge-count" id="record-count"><i class="fa-solid fa-database"></i> 0 records</span>
                 </div>
             </div>
 
-            <!-- Right: Toll Summary Details -->
-            <div class="card summary-card">
-                <div class="card-header">
-                    <h2>Toll Gate Summary</h2>
-                </div>
-                <div class="summary-body">
-                    <div class="summary-item">
-                        <span>Toll Tariff (Car/Van):</span>
-                        <strong>₹100 / pass</strong>
-                    </div>
-                    <div class="summary-item">
-                        <span>All-Time Vehicles:</span>
-                        <strong id="stat-total-vehicles">0</strong>
-                    </div>
-                    <div class="summary-item">
-                        <span>All-Time Revenue:</span>
-                        <strong id="stat-total-revenue">₹0</strong>
-                    </div>
-                    <div class="summary-item">
-                        <span>Target BPU Device:</span>
-                        <strong>RDK X5 (10 TOPS)</strong>
-                    </div>
-                    <div class="summary-item">
-                        <span>AI Pipeline:</span>
-                        <strong>YOLOv8n + PaddleOCR</strong>
-                    </div>
-                    <div class="summary-item">
-                        <span>Database:</span>
-                        <strong>SQLite (On-board)</strong>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Bottom: Recent Vehicle Detections Table -->
-        <div class="card table-card">
-            <div class="card-header">
-                <h2>Recent Vehicle Toll Records</h2>
-                <span class="record-counter" id="record-count">0 records</span>
-            </div>
-            <div class="table-container">
-                <table>
+            <div class="table-wrapper">
+                <table class="anpr-table">
                     <thead>
                         <tr>
-                            <th>Crop</th>
-                            <th>Plate Number</th>
-                            <th>Time</th>
-                            <th>Toll Fee</th>
-                            <th>Confidence</th>
-                            <th>Source</th>
-                            <th>Status</th>
+                            <th><i class="fa-solid fa-image"></i> Crop</th>
+                            <th><i class="fa-solid fa-id-card"></i> Plate Number</th>
+                            <th><i class="fa-solid fa-clock"></i> Timestamp</th>
+                            <th><i class="fa-solid fa-receipt"></i> Toll Fee</th>
+                            <th><i class="fa-solid fa-sliders"></i> Confidence</th>
+                            <th><i class="fa-solid fa-video"></i> Source</th>
+                            <th><i class="fa-solid fa-circle-check"></i> Status</th>
                         </tr>
                     </thead>
                     <tbody id="records-tbody">
                         <tr>
-                            <td colspan="7" class="loading-row">Waiting for vehicles...</td>
+                            <td colspan="7" class="loading-row">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <span>Waiting for vehicle detections...</span>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
+
+        <!-- Footer System Info -->
+        <footer class="app-footer">
+            <div class="footer-left">
+                <span><i class="fa-solid fa-cube"></i> RDK X5 Embedded Edge AI</span>
+                <span class="footer-sep">•</span>
+                <span>Horizon Hobot BPU</span>
+            </div>
+            <div class="footer-right">
+                <span>Autonomous Toll Gate Controller</span>
+            </div>
+        </footer>
     </div>
 
+    <!-- Script -->
     <script src="/static/js/dashboard.js"></script>
 </body>
 

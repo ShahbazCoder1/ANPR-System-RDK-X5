@@ -32,8 +32,10 @@ class CameraStream:
 
                 print(f"[CAMERA] Initializing GS130W MIPI CSI Camera on CAM{self.mipi_port} ({self.target_w}x{self.target_h} @ {self.fps}fps)...")
                 self.cam_obj = srcampy.Camera()
-                # Open camera: (video_index 0/1, fps 30, [w1, w2], [h1, h2], sensor_h, sensor_w)
-                ret = self.cam_obj.open_cam(self.mipi_port, -1, self.fps, [640, self.target_w], [640, self.target_h], self.target_h, self.target_w)
+                # GS130W uses the SC132GS sensor, which has a native resolution of 1280x1080.
+                # The last two arguments MUST be the native sensor height and width, otherwise libsrcampy 
+                # will try wrong drivers (like sc1330t/ar0233) and fail the I2C Chip ID check.
+                ret = self.cam_obj.open_cam(self.mipi_port, -1, self.fps, [640, self.target_w], [640, self.target_h], 1080, 1280)
                 if ret != 0:
                     print(f"[ERROR] Failed to probe MIPI camera sensor on CAM{self.mipi_port} (Error code: {ret}).")
                     print("[INFO] Tip: Verify MIPI CSI ribbon cable orientation and connections on RDK X5.")

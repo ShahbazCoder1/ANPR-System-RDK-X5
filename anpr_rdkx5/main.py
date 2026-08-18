@@ -165,29 +165,18 @@ class OCRWorker:
                 print(f"[WARN] OCR error: {e}")
                 continue
 
-            # Always print debug — even when OCR returns nothing
-            if raw_text:
-                print(f"[OCR] YOLO={yolo_conf:.0%} crop={crop_w}x{crop_h} | Raw='{raw_text}' | Valid='{best_plate or 'REJECTED'}'")
-            else:
-                print(f"[OCR] YOLO={yolo_conf:.0%} crop={crop_w}x{crop_h} | (empty — OCR found no text)")
-                continue  # Nothing to save
+            if not best_plate:
+                continue
 
-            # Use validated plate or cleaned raw text as fallback
-            display_plate = best_plate
-            if not display_plate:
-                display_plate = re.sub(r"[^A-Z0-9]", "", raw_text.upper())
-                if len(display_plate) < 4:
-                    continue
-
-            is_dup = self.db.is_duplicate(display_plate, current_time_sec=ts, cooldown_sec=self.cooldown)
+            is_dup = self.db.is_duplicate(best_plate, current_time_sec=ts, cooldown_sec=self.cooldown)
             if not is_dup:
                 now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-                crop_filename = f"crop_{now_str}_{display_plate}.jpg"
+                crop_filename = f"crop_{now_str}_{best_plate}.jpg"
                 crop_path = self.crops_dir / crop_filename
                 cv2.imwrite(str(crop_path), plate_crop)
 
                 self.db.insert_record(
-                    plate_number=display_plate,
+                    plate_number=best_plate,
                     yolo_conf=yolo_conf,
                     ocr_conf=ocr_conf,
                     raw_text=raw_text,
@@ -197,12 +186,11 @@ class OCRWorker:
                     current_time_sec=ts
                 )
 
-                tag = "" if best_plate else " (raw)"
                 time_display = datetime.now().strftime("%H:%M:%S")
-                print(f" {time_display} | {display_plate:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag}{tag}")
+                print(f" {time_display} | {best_plate:12} | ₹{self.toll_amount} | {yolo_conf:.0%}  | {ocr_conf:.0%}  | {self.source_tag}")
 
             # Cache for drawing green box on subsequent frames
-            self.recent_plates[display_plate] = (x1, y1, x2, y2, ocr_conf, time.time() + 3.0)
+            self.recent_plates[best_plate] = (x1, y1, x2, y2, ocr_conf, time.time() + 3.0)
 
     def stop(self):
         self._stop.set()

@@ -99,24 +99,6 @@ class PlateDetector:
         # 3. BPU Forward pass
         outputs = self.bpu_model.forward([nv12_input])
 
-        # Debug: print output structure on first frame
-        if not self._debug_printed:
-            self._debug_printed = True
-            print(f"\n[DEBUG] BPU Model Output Structure ({len(outputs)} tensors):")
-            for i, out in enumerate(outputs):
-                if hasattr(out, 'buffer'):
-                    arr = np.array(out.buffer, copy=False)
-                    print(f"  Output[{i}]: shape={arr.shape}, dtype={arr.dtype}, "
-                          f"min={arr.min():.4f}, max={arr.max():.4f}, mean={arr.mean():.4f}")
-                elif hasattr(out, 'shape'):
-                    print(f"  Output[{i}]: shape={out.shape}, dtype={out.dtype}")
-                else:
-                    print(f"  Output[{i}]: type={type(out)}")
-                # Also check for properties attribute (hobot_dnn tensor metadata)
-                if hasattr(out, 'properties'):
-                    print(f"           properties={out.properties}")
-            print()
-
         boxes = []
 
         if self.use_parser:

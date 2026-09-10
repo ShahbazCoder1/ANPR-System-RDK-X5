@@ -73,7 +73,29 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchStats();
     fetchRecentRecords();
 
-    // Auto-refresh timers
-    setInterval(fetchStats, 1000);        // Update stats & FPS every second
-    setInterval(fetchRecentRecords, 1500); // Update table every 1.5 seconds
+    // Auto-refresh timers (pause when tab is hidden to save board CPU/RAM)
+    let statsTimer = setInterval(fetchStats, 1500);
+    let recordsTimer = setInterval(fetchRecentRecords, 2000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            clearInterval(statsTimer);
+            clearInterval(recordsTimer);
+        } else {
+            fetchStats();
+            fetchRecentRecords();
+            statsTimer = setInterval(fetchStats, 1500);
+            recordsTimer = setInterval(fetchRecentRecords, 2000);
+        }
+    });
+
+    // Stream error auto-recovery
+    const videoStream = document.getElementById('video-stream');
+    if (videoStream) {
+        videoStream.onerror = () => {
+            setTimeout(() => {
+                videoStream.src = '/api/feed?' + Date.now();
+            }, 2000);
+        };
+    }
 });

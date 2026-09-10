@@ -3,11 +3,22 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# PyTorch & YOLO Weights
+# PyTorch, ONNX & BPU Weights
 *.pt
+!step_1_model_training/yolov8n.pt
+
 *.onnx
+!step_2_model_conversion/onnx_models/*.onnx
+
 *.engine
+
+# BPU binaries: Ignore raw calibration dumps, but track compiled deployment model
 *.bin
+!step_3_anpr_rdkx5/models/*.bin
+!anpr_rdkx5/models/*.bin
+step_2_model_conversion/calibration_data/*.bin
+model_conversion/calibration_data/*.bin
+
 runs/
 
 # Dataset cache & videos

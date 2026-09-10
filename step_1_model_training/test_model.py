@@ -18,10 +18,15 @@ def test_model():
         print("[ERROR] Ultralytics is not installed. Please run setup_env.bat first!")
         sys.exit(1)
 
-    base_dir = Path(__file__).parent.resolve()
+    base_dir = Path(__file__).resolve().parent
     
-    # Path to trained model
-    weights_path = Path(args.weights) if args.weights else base_dir / "runs" / "detect_plate" / "weights" / "best.pt"
+    # Path to trained model (check local step folder, then project root)
+    if args.weights:
+        weights_path = Path(args.weights)
+    else:
+        weights_path = base_dir / "runs" / "detect_plate" / "weights" / "best.pt"
+        if not weights_path.exists() and (base_dir.parent / "runs" / "detect_plate" / "weights" / "best.pt").exists():
+            weights_path = base_dir.parent / "runs" / "detect_plate" / "weights" / "best.pt"
     
     if not weights_path.exists():
         print(f"[ERROR] Trained model file not found at: {weights_path}")
@@ -33,6 +38,8 @@ def test_model():
 
     if args.mode == "dataset":
         data_yaml = base_dir / "License Plate Detection" / "data.yaml"
+        if not data_yaml.exists():
+            data_yaml = base_dir.parent / "License Plate Detection" / "data.yaml"
         print(f"Evaluating model on test dataset split: {data_yaml}...")
         metrics = model.val(data=str(data_yaml), split="test")
         print("\n================ Validation Metrics ================")

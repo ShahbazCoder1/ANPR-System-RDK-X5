@@ -29,19 +29,24 @@ def train_yolo():
         if confirm.lower() != 'y':
             sys.exit(0)
 
-    # Locate dataset yaml
-    base_dir = Path(__file__).parent.resolve()
+    # Locate dataset yaml (check local folder, then project root)
+    base_dir = Path(__file__).resolve().parent
     data_yaml = base_dir / "License Plate Detection" / "data.yaml"
+    if not data_yaml.exists():
+        data_yaml = base_dir.parent / "License Plate Detection" / "data.yaml"
     
     if not data_yaml.exists():
         print(f"[ERROR] Could not find dataset config at: {data_yaml}")
+        print("Please place the 'License Plate Detection' dataset folder in this directory or the project root.")
         sys.exit(1)
         
     print(f"Dataset Config : {data_yaml}")
     print("---------------------------------------------------")
 
     # Load YOLOv8n pre-trained model
-    model = YOLO("yolov8n.pt")
+    pretrained_weights = base_dir / "yolov8n.pt"
+    model_source = str(pretrained_weights) if pretrained_weights.exists() else "yolov8n.pt"
+    model = YOLO(model_source)
 
     # Train parameters tuned for 4GB VRAM (RTX 3050)
     print("Starting training with RTX 3050 optimizations (Batch=8, ImgSz=640, AMP=True)...")

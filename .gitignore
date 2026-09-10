@@ -14,6 +14,7 @@ __pycache__/
 
 # BPU binaries: Ignore raw calibration dumps, but track compiled deployment model
 *.bin
+!models/*.bin
 !step_3_anpr_rdkx5/models/*.bin
 !anpr_rdkx5/models/*.bin
 step_2_model_conversion/calibration_data/*.bin

@@ -1,4 +1,4 @@
-﻿# RDK X5 Edge AI Automatic Number Plate Recognition (ANPR) System
+# RDK X5 Edge AI Automatic Number Plate Recognition (ANPR) System
 
 [![Hardware](https://img.shields.io/badge/Hardware-D--Robotics%20RDK%20X5%20(10%20TOPS)-blue.svg)](https://developer.d-robotics.cc/)
 [![Model](https://img.shields.io/badge/Model-YOLOv8n%20%7C%20RapidOCR-green.svg)](https://github.com/ultralytics/ultralytics)
@@ -14,7 +14,7 @@ A production-ready, hardware-accelerated **Edge AI Automatic Number Plate Recogn
 > **Looking for Model Training & Conversion Code?**
 > This `main` branch contains the clean, ready-to-run edge deployment system with the pre-compiled 10 TOPS BPU model included.
 >
-> If you want to train your own custom license plate model from scratch or convert `.pt` weights into `.bin` via Horizon OpenExplorer Docker, please switch to the **[`step-3-rdk-deployment`](https://github.com/ShahbazCoder1/ANPR-System-RDK-X5/tree/step-3-rdk-deployment)** branch:
+> If you want to train your own custom license plate model from scratch or convert `.pt` weights into `.bin` via Horizon OpenExplorer Docker, please switch to the **[`full-pipeline`](https://github.com/ShahbazCoder1/ANPR-System-RDK-X5/tree/full-pipeline)** branch:
 > * **`step_1_model_training/`**: PyTorch YOLOv8n training & evaluation scripts (RTX 3050 optimizations).
 > * **`step_2_model_conversion/`**: ONNX export, calibration, and Docker compilation configs.
 > * **`step_3_anpr_rdkx5/`**: Standalone modular edge deployment.
